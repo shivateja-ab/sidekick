@@ -3,8 +3,6 @@
  */
 
 import { config } from './config.js';
-import { cache } from './cache.js';
-import { hash } from './utils.js';
 
 class ApiClient {
     constructor() {
@@ -47,49 +45,6 @@ class ApiClient {
             console.error('API request failed:', error);
             throw error;
         }
-    }
-
-    /**
-     * Analyze an image
-     * @param {string|Blob} imageData - Base64 string or Blob
-     * @param {Object} options - Analysis options
-     * @returns {Promise<Object>}
-     */
-    async analyzeImage(imageData, options = {}) {
-        // Check cache first
-        if (config.app.cacheEnabled) {
-            const imageHash = await hash(imageData);
-            const cached = await cache.get(imageHash);
-            if (cached) {
-                return cached;
-            }
-        }
-
-        // Convert image to base64 if needed
-        let base64Image;
-        if (imageData instanceof Blob) {
-            base64Image = await this.blobToBase64(imageData);
-        } else {
-            base64Image = imageData;
-        }
-
-        const response = await this.request(config.api.endpoints.analyze, {
-            method: 'POST',
-            body: JSON.stringify({
-                image: base64Image,
-                ...options
-            }),
-        });
-
-        const result = await response.json();
-
-        // Cache the result
-        if (config.app.cacheEnabled) {
-            const imageHash = await hash(imageData);
-            await cache.set(imageHash, result);
-        }
-
-        return result;
     }
 
     /**
@@ -254,15 +209,6 @@ class ApiClient {
      */
     async healthCheck() {
         const response = await this.request(config.api.endpoints.health);
-        return response.json();
-    }
-
-    /**
-     * Get API configuration
-     * @returns {Promise<Object>}
-     */
-    async getConfig() {
-        const response = await this.request(config.api.endpoints.config);
         return response.json();
     }
 

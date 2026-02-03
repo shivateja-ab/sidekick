@@ -5,8 +5,6 @@
 import { camera } from './camera.js';
 import { api } from './api.js';
 import { speech } from './speech.js';
-import { cache } from './cache.js';
-import { compressImage } from './utils.js';
 import { config } from './config.js';
 
 class App {
@@ -44,14 +42,6 @@ class App {
         // Initialize camera
         camera.init(this.video, this.canvas);
         console.log('✅ Camera initialized');
-        
-        // Initialize cache
-        try {
-            await cache.init();
-            console.log('✅ Cache initialized');
-        } catch (error) {
-            console.warn('⚠️ Cache init failed:', error);
-        }
         
         // Setup event listeners
         this.setupEventListeners();
@@ -136,13 +126,7 @@ class App {
             this.showStatus('Capturing image...', 'info');
 
             // Capture image (single frame from video preview)
-            let imageBlob = await camera.capture('image/jpeg', 0.75); // Lower quality for free tier
-            
-            // Compress if needed (optimize for free tier - smaller images = faster processing)
-            if (imageBlob.size > config.app.maxImageSize) {
-                this.showStatus('Compressing image...', 'info');
-                imageBlob = await compressImage(imageBlob, 1280, 720, 0.75); // Lower resolution for free tier
-            }
+            let imageBlob = await camera.capture('image/jpeg', 0.75);
             
             // Record capture time for throttling
             this.lastCaptureTime = Date.now();

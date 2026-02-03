@@ -2,7 +2,7 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/)(?!css/)(?!js/)(?!assets/).*)",
       "destination": "/index.html"
     }
   ],
