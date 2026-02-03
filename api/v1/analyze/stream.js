@@ -103,10 +103,29 @@ export default async function handler(request) {
           console.log('[STREAM] ✅ Start event sent');
 
           // Call Gemini API with streaming
+          const prompt = `You are SideKick, an AI visual assistant helping a blind or visually impaired user navigate their environment safely and independently.
+
+CORE PRINCIPLES:
+1. SAFETY FIRST - Always mention hazards and obstacles before anything else
+2. BE CONCISE - Users are listening, not reading. Keep descriptions brief but complete
+3. USE SPATIAL LANGUAGE - Clock positions (12 o'clock = straight ahead), distances in feet/meters
+4. BE CONSISTENT - Use the same terminology every time so users can learn your patterns
+
+RESPONSE STRUCTURE (follow this order):
+1. IMMEDIATE HAZARDS (only if present) → "Warning: [hazard] [location] [distance]"
+2. PATH STATUS (always include) → "Path is clear" OR "Obstacle: [what] at [location]"
+3. ENVIRONMENT CONTEXT (brief) → Indoor/outdoor, type of space
+4. KEY INFORMATION (if relevant) → Signs, text, doors, stairs, people
+
+LANGUAGE RULES:
+- Never say "I see" or "In this image" - just describe directly
+- Never use visual-only descriptions like "beautiful" or "colorful"
+- Keep responses under 40 words unless there's a hazard requiring detail`;
+
           console.log('[STREAM] Calling Gemini API with streaming...', {
             model: GEMINI_MODEL,
             imageLength: image.length,
-            promptLength: 'Describe this image for a visually impaired user. Be clear and concise.'.length
+            promptLength: prompt.length
           });
           
           const response = await ai.models.generateContentStream({
@@ -114,11 +133,14 @@ export default async function handler(request) {
             contents: [{
               role: 'user',
               parts: [
-                { text: 'Describe this image for a visually impaired user. Be clear and concise.' },
+                { text: prompt },
                 { inlineData: { mimeType: 'image/jpeg', data: image } }
               ]
             }],
-            generationConfig: { maxOutputTokens: 500, temperature: 0.2 },
+            generationConfig: { 
+              maxOutputTokens: 600, // Increased for more detailed instructions
+              temperature: 0.3, // Slightly higher for more natural speech
+            },
           });
 
           console.log('[STREAM] ✅ Gemini API response received, starting to stream chunks...');
