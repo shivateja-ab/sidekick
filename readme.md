@@ -1,1 +1,3 @@
-Hi
+# SideKick
+
+AI-powered visual assistant

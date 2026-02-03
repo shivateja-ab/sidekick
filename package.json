@@ -1,0 +1,32 @@
+{
+  "name": "SideKick",
+  "version": "1.0.0",
+  "description": "Navigation API - AI-powered assistance for visually impaired users",
+  "type": "module",
+  "scripts": {
+    "dev:local": "vercel dev --yes",
+    "dev:api": "vercel dev --listen 3001 --yes",
+    "dev:frontend": "node scripts/dev-server.js",
+    "sync-frontend": "node scripts/sync-frontend.js",
+    "deploy": "vercel --prod",
+    "deploy:preview": "vercel"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0"
+  },
+  "devDependencies": {
+    "vercel": "^50.9.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "accessibility",
+    "navigation",
+    "gemini",
+    "ai",
+    "vision"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
