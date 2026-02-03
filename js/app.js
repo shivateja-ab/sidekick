@@ -6,6 +6,8 @@ import { camera } from './camera.js';
 import { api } from './api.js';
 import { speech } from './speech.js';
 import { config } from './config.js';
+import { SentenceBuffer } from './sentence-buffer.js';
+import { TTSQueue } from './tts-queue.js';
 
 class App {
     constructor() {
@@ -14,13 +16,32 @@ class App {
         this.captureBtn = document.getElementById('capture-btn');
         this.startBtn = document.getElementById('start-camera-btn');
         this.stopBtn = document.getElementById('stop-camera-btn');
+        this.startSidekickBtn = document.getElementById('start-sidekick-btn');
+        this.switchCameraBtn = document.getElementById('switch-camera-btn');
         this.statusEl = document.getElementById('status');
         this.outputEl = document.getElementById('output');
+        
+        this.audioUnlocked = false; // Track if audio has been unlocked
         
         this.isProcessing = false;
         this.currentStreamAbort = null;
         this.lastCaptureTime = 0;
         this.minCaptureInterval = 4000; // 4 seconds minimum between captures (15 requests/min limit = 4 sec/request)
+        
+        // Initialize sentence buffer and TTS queue
+        this.sentenceBuffer = new SentenceBuffer();
+        this.ttsQueue = new TTSQueue({
+            rate: 1.1, // Slightly faster for navigation
+            pitch: 1.0,
+            volume: 1.0,
+            lang: 'en-US'
+        });
+        
+        // Connect sentence buffer to TTS queue
+        this.sentenceBuffer.onSentence = (sentence) => {
+            console.log('📢 [App] Complete sentence ready:', sentence);
+            this.ttsQueue.enqueue(sentence);
+        };
     }
 
     async init() {
@@ -60,21 +81,96 @@ class App {
     }
 
     setupEventListeners() {
+        // Start SideKick button - unlocks audio and initializes app
+        if (this.startSidekickBtn) {
+            this.startSidekickBtn.addEventListener('click', () => this.startSideKick());
+        }
+        
         this.startBtn.addEventListener('click', () => this.startCamera());
         this.stopBtn.addEventListener('click', () => this.stopCamera());
         this.captureBtn.addEventListener('click', () => this.captureAndAnalyze());
+        
+        // Camera switch button
+        if (this.switchCameraBtn) {
+            this.switchCameraBtn.addEventListener('click', () => this.switchCamera());
+        }
+    }
+
+    /**
+     * Start SideKick - unlocks audio and initializes app (required for mobile)
+     */
+    async startSideKick() {
+        console.log('🚀 [App] Starting SideKick...');
+        
+        try {
+            // Unlock audio (required for mobile TTS)
+            this.showStatus('Unlocking audio...', 'info');
+            await this.ttsQueue.unlockAudio();
+            this.audioUnlocked = true;
+            
+            // Speak confirmation
+            this.ttsQueue.enqueue('SideKick ready. Starting camera.');
+            
+            // Hide start button, show camera controls
+            if (this.startSidekickBtn) {
+                this.startSidekickBtn.style.display = 'none';
+            }
+            if (this.startBtn) {
+                this.startBtn.style.display = 'inline-block';
+            }
+            if (this.switchCameraBtn) {
+                this.switchCameraBtn.style.display = 'inline-block';
+            }
+            
+            // Auto-start camera
+            await this.startCamera();
+            
+            this.showStatus('SideKick ready!', 'success');
+            
+        } catch (error) {
+            console.error('❌ [App] Error starting SideKick:', error);
+            this.showStatus(`Error: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Switch between front and back camera
+     */
+    async switchCamera() {
+        if (!camera.isActive) {
+            this.showStatus('Camera not active', 'error');
+            return;
+        }
+
+        try {
+            this.showStatus('Switching camera...', 'info');
+            await camera.switchCamera();
+            this.showStatus('Camera switched', 'success');
+        } catch (error) {
+            console.error('❌ [App] Error switching camera:', error);
+            this.showStatus(`Error: ${error.message}`, 'error');
+        }
     }
 
     async startCamera() {
-        console.log('📷 Starting camera...');
+        console.log('📷 [App] Starting camera...');
         try {
             this.showStatus('Starting camera...', 'info');
-            await camera.start();
+            
+            // Start with back camera (environment) for navigation
+            await camera.start('environment');
+            
             this.showStatus('Camera active - Ready to capture!', 'success');
             this.updateButtonStates(true);
-            console.log('✅ Camera started successfully');
+            
+            // Show switch camera button if multiple cameras available
+            if (this.switchCameraBtn) {
+                this.switchCameraBtn.style.display = 'inline-block';
+            }
+            
+            console.log('✅ [App] Camera started successfully');
         } catch (error) {
-            console.error('❌ Camera start failed:', error);
+            console.error('❌ [App] Camera start failed:', error);
             this.showStatus(`Error: ${error.message}`, 'error');
         }
     }
@@ -86,7 +182,10 @@ class App {
             this.currentStreamAbort = null;
         }
         
-        speech.stop();
+        // Stop TTS and clear buffers
+        this.ttsQueue.stop();
+        this.sentenceBuffer.reset();
+        
         camera.stop();
         this.showStatus('Camera stopped', 'info');
         this.updateButtonStates(false);
@@ -117,8 +216,9 @@ class App {
             return;
         }
 
-        // Stop any ongoing speech
-        speech.stop();
+        // Stop any ongoing speech and clear buffers
+        this.ttsQueue.stop();
+        this.sentenceBuffer.reset();
 
         try {
             this.isProcessing = true;
@@ -152,25 +252,21 @@ class App {
                 },
                 
                 onChunk: (data) => {
-                    // First chunk arrives in ~800ms - start TTS immediately!
-                    if (!firstChunkReceived && data.isFirst) {
+                    // Track first chunk for latency measurement
+                    if (!firstChunkReceived) {
                         firstChunkReceived = true;
                         const latency = data.latency || 0;
-                        console.log(`First chunk received in ${latency}ms - starting TTS`);
-                        
-                        // Start speaking immediately with first chunk
-                        accumulatedText = data.text;
-                        speech.speak(data.text);
-                        
-                        // Update UI with first chunk
-                        this.outputEl.innerHTML = `<div class="result-text streaming">${this.escapeHtml(data.text)}</div>`;
+                        console.log(`📡 [App] First chunk received in ${latency}ms`);
                         this.showStatus(`Streaming... (first words in ${latency}ms)`, 'info');
-                    } else {
-                        // Append to accumulated text
-                        accumulatedText += data.text;
+                    }
+                    
+                    // Add chunk to sentence buffer (will extract complete sentences)
+                    const chunkText = data.text || '';
+                    if (chunkText) {
+                        accumulatedText += chunkText;
                         
-                        // Continue speaking (queue next chunk)
-                        speech.speak(data.text);
+                        // Send to sentence buffer (will queue complete sentences for TTS)
+                        this.sentenceBuffer.addChunk(chunkText);
                         
                         // Update UI progressively
                         this.outputEl.innerHTML = `<div class="result-text streaming">${this.escapeHtml(accumulatedText)}</div>`;
@@ -179,12 +275,13 @@ class App {
                 
                 onHazard: (data) => {
                     hazardDetected = true;
-                    console.log('Hazard detected:', data);
+                    console.log('⚠️ [App] Hazard detected:', data);
                     
                     // Stop current speech and speak hazard warning immediately
-                    speech.stop();
+                    this.ttsQueue.stop();
+                    this.sentenceBuffer.reset();
                     const warning = `Warning: ${data.text || 'Hazard detected'}`;
-                    speech.speak(warning);
+                    this.ttsQueue.enqueue(warning);
                     
                     // Update UI with hazard warning
                     this.outputEl.innerHTML = `
@@ -198,7 +295,10 @@ class App {
                 },
                 
                 onComplete: (data) => {
-                    console.log('Stream complete:', data);
+                    console.log('✅ [App] Stream complete:', data);
+                    
+                    // Flush any remaining buffer (incomplete sentence at end)
+                    this.sentenceBuffer.flush();
                     
                     // Display final parsed result
                     if (data.data) {
@@ -213,7 +313,11 @@ class App {
                 },
                 
                 onDone: (data) => {
-                    console.log('Stream done:', data);
+                    console.log('🏁 [App] Stream done:', data);
+                    
+                    // Ensure any remaining buffer is flushed
+                    this.sentenceBuffer.flush();
+                    
                     this.isProcessing = false;
                     this.captureBtn.disabled = false;
                     this.captureBtn.textContent = 'Capture & Analyze';
@@ -226,7 +330,11 @@ class App {
                         stack: error.stack,
                         errorObject: error
                     });
-                    speech.stop();
+                    
+                    // Stop TTS and clear buffers on error
+                    this.ttsQueue.stop();
+                    this.sentenceBuffer.reset();
+                    
                     this.showStatus(`Error: ${error.message}`, 'error');
                     this.isProcessing = false;
                     this.captureBtn.disabled = false;
@@ -238,8 +346,12 @@ class App {
             this.currentStreamAbort = streamAbort;
 
         } catch (error) {
-            console.error('Error:', error);
-            speech.stop();
+            console.error('❌ [App] Error:', error);
+            
+            // Stop TTS and clear buffers on error
+            this.ttsQueue.stop();
+            this.sentenceBuffer.reset();
+            
             this.showStatus(`Error: ${error.message}`, 'error');
             this.isProcessing = false;
             this.captureBtn.disabled = false;
@@ -279,9 +391,18 @@ class App {
     }
 
     updateButtonStates(cameraActive) {
-        this.startBtn.disabled = cameraActive;
-        this.stopBtn.disabled = !cameraActive;
+        if (this.startBtn) {
+            this.startBtn.disabled = cameraActive;
+        }
+        if (this.stopBtn) {
+            this.stopBtn.disabled = !cameraActive;
+        }
         this.captureBtn.disabled = !cameraActive || this.isProcessing;
+        
+        // Enable switch camera button when camera is active
+        if (this.switchCameraBtn) {
+            this.switchCameraBtn.disabled = !cameraActive;
+        }
     }
 
     escapeHtml(text) {

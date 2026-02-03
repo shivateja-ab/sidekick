@@ -26,14 +26,14 @@ export const config = {
     // Note: Video is ONLY for preview. Images are captured manually via button click.
     // Each capture = 1 API call. No continuous/automatic capture.
     camera: {
-        // 'user' = front camera (laptop webcam), 'environment' = rear camera (phone)
-        // Auto-detect: try user first (laptop), fallback to environment (phone)
-        facingMode: 'user', // Changed to 'user' for laptop compatibility
+        // 'environment' = back camera (required for navigation on mobile)
+        // 'user' = front camera (fallback for desktop/laptop)
+        facingMode: 'environment', // Default to back camera for navigation
         width: 640,
         height: 480,
         constraints: {
             video: {
-                facingMode: { ideal: 'user' }, // Prefer front camera (laptop webcam)
+                facingMode: { ideal: 'environment' }, // Prefer back camera (mobile navigation)
                 width: { ideal: 640 },
                 height: { ideal: 480 }
             }

@@ -205,11 +205,13 @@ LANGUAGE RULES:
     });
 
     // Return SSE stream response (keeps connection open for continuous chunks)
+    // Headers optimized to prevent buffering and enable real-time streaming
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no', // Disable nginx buffering
         'Access-Control-Allow-Origin': '*',
       },
     });

@@ -29,27 +29,92 @@ class CameraManager {
 
     /**
      * Start camera stream
+     * @param {string} facingMode - 'environment' (back) or 'user' (front)
      * @returns {Promise<void>}
      */
-    async start() {
+    async start(facingMode = null) {
+        // Stop existing stream if active
         if (this.isActive) {
-            return;
+            this.stop();
         }
 
         try {
-            this.stream = await navigator.mediaDevices.getUserMedia(
-                config.camera.constraints
-            );
+            // Use provided facingMode or default from config
+            const requestedFacingMode = facingMode || config.camera.facingMode;
+            
+            // Build constraints with exact facingMode for mobile
+            const constraints = {
+                video: {
+                    facingMode: requestedFacingMode === 'environment' 
+                        ? { ideal: 'environment' } // Prefer back camera
+                        : { ideal: 'user' }, // Fallback to front
+                    width: { ideal: config.camera.width },
+                    height: { ideal: config.camera.height }
+                }
+            };
+
+            console.log('[Camera] Requesting camera with facingMode:', requestedFacingMode);
+            
+            this.stream = await navigator.mediaDevices.getUserMedia(constraints);
 
             if (this.video) {
                 this.video.srcObject = this.stream;
                 await this.video.play();
                 this.isActive = true;
+                console.log('[Camera] ✅ Camera started successfully');
             }
         } catch (error) {
-            console.error('Error starting camera:', error);
-            throw new Error(`Failed to start camera: ${error.message}`);
+            console.error('[Camera] ❌ Error starting camera:', error);
+            
+            // If back camera fails, try front camera as fallback
+            if (facingMode === 'environment' || config.camera.facingMode === 'environment') {
+                console.log('[Camera] ⚠️ Back camera failed, trying front camera...');
+                try {
+                    const fallbackConstraints = {
+                        video: {
+                            facingMode: { ideal: 'user' },
+                            width: { ideal: config.camera.width },
+                            height: { ideal: config.camera.height }
+                        }
+                    };
+                    this.stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+                    if (this.video) {
+                        this.video.srcObject = this.stream;
+                        await this.video.play();
+                        this.isActive = true;
+                        console.log('[Camera] ✅ Front camera started as fallback');
+                    }
+                } catch (fallbackError) {
+                    throw new Error(`Failed to start camera: ${error.message}`);
+                }
+            } else {
+                throw new Error(`Failed to start camera: ${error.message}`);
+            }
         }
+    }
+
+    /**
+     * Switch between front and back camera
+     * @returns {Promise<void>}
+     */
+    async switchCamera() {
+        if (!this.isActive) {
+            throw new Error('Camera not active');
+        }
+
+        // Get current facing mode from active track
+        const videoTrack = this.stream.getVideoTracks()[0];
+        const currentSettings = videoTrack.getSettings();
+        const currentFacingMode = currentSettings.facingMode;
+        
+        // Determine target facing mode
+        const targetFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+        
+        console.log(`[Camera] Switching from ${currentFacingMode} to ${targetFacingMode}`);
+        
+        // Stop current stream and start with new facing mode
+        this.stop();
+        await this.start(targetFacingMode);
     }
 
     /**
