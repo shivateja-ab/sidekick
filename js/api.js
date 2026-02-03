@@ -224,8 +224,48 @@ class ApiClient {
                                         break;
                                     case 'error':
                                         console.error('[CLIENT] ❌ Error event received:', data);
+                                        
+                                        // Handle nested JSON errors (common with API errors)
+                                        let errorMessage = data.error || data.message || 'Stream error';
+                                        
+                                        // Try to parse if it's a JSON string
+                                        if (typeof errorMessage === 'string') {
+                                            try {
+                                                const parsed = JSON.parse(errorMessage);
+                                                // Handle nested error structures
+                                                if (parsed.error) {
+                                                    if (typeof parsed.error === 'string') {
+                                                        try {
+                                                            const innerParsed = JSON.parse(parsed.error);
+                                                            if (innerParsed.error) {
+                                                                errorMessage = innerParsed.error.message || innerParsed.error.code || errorMessage;
+                                                            } else {
+                                                                errorMessage = parsed.error;
+                                                            }
+                                                        } catch (e) {
+                                                            errorMessage = parsed.error;
+                                                        }
+                                                    } else if (parsed.error.message) {
+                                                        errorMessage = parsed.error.message;
+                                                    } else if (parsed.error.code) {
+                                                        errorMessage = `Error ${parsed.error.code}: ${parsed.error.message || 'API error'}`;
+                                                    }
+                                                } else {
+                                                    errorMessage = parsed.message || errorMessage;
+                                                }
+                                            } catch (e) {
+                                                // Not JSON, use as-is
+                                                console.log('[CLIENT] Error message is not JSON, using as-is');
+                                            }
+                                        }
+                                        
+                                        // Check for rate limiting
+                                        if (errorMessage.includes('429') || errorMessage.includes('Too Many Requests') || errorMessage.includes('exceeded')) {
+                                            errorMessage = 'Rate limit exceeded. Please wait a moment before trying again.';
+                                        }
+                                        
                                         if (callbacks.onError) {
-                                            callbacks.onError(new Error(data.error || data.message || 'Stream error'));
+                                            callbacks.onError(new Error(errorMessage));
                                         }
                                         break;
                                     default:

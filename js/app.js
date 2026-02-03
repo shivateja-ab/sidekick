@@ -20,7 +20,7 @@ class App {
         this.isProcessing = false;
         this.currentStreamAbort = null;
         this.lastCaptureTime = 0;
-        this.minCaptureInterval = 2000; // 2 seconds minimum between captures (client-side throttling)
+        this.minCaptureInterval = 4000; // 4 seconds minimum between captures (15 requests/min limit = 4 sec/request)
     }
 
     async init() {

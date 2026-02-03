@@ -155,9 +155,28 @@ export default async function handler(request) {
             message: error.message,
             name: error.name,
             stack: error.stack,
-            errorObject: error
+            errorObject: error,
+            errorString: String(error),
+            errorJSON: JSON.stringify(error, Object.getOwnPropertyNames(error))
           });
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`));
+          
+          // Extract meaningful error message
+          let errorMessage = error.message || 'Unknown error';
+          
+          // Handle Gemini API errors
+          if (error.response || error.status) {
+            const status = error.status || error.response?.status;
+            const statusText = error.statusText || error.response?.statusText;
+            
+            if (status === 429) {
+              errorMessage = 'Rate limit exceeded. Please wait before trying again.';
+            } else if (status) {
+              errorMessage = `API Error ${status}: ${statusText || errorMessage}`;
+            }
+          }
+          
+          // Send error event
+          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`));
           controller.close();
         }
       },
