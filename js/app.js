@@ -220,7 +220,12 @@ class App {
                 },
                 
                 onError: (error) => {
-                    console.error('Stream error:', error);
+                    console.error('[APP] ❌ Stream error callback triggered:', {
+                        message: error.message,
+                        name: error.name,
+                        stack: error.stack,
+                        errorObject: error
+                    });
                     speech.stop();
                     this.showStatus(`Error: ${error.message}`, 'error');
                     this.isProcessing = false;
