@@ -28,52 +28,58 @@ function generatePrompt(context) {
 
   switch (query) {
     case 'validate_position': {
+      const featurePrompt = context.expectedFeaturePrompt ?
+        `User is looking for: "${context.expectedFeaturePrompt}"` :
+        'User is looking for landmarks visible in the Reference Image.';
+
       return `You are validating a visually impaired user's position during indoor navigation.
 
 You are given TWO images:
-1. REFERENCE IMAGE (Image 1): What this location SHOULD look like. This was captured during setup.
+1. REFERENCE IMAGE (Image 1): What this location SHOULD look like.
 2. CURRENT IMAGE (Image 2): What the user sees RIGHT NOW.
 
-NAVIGATION CONTEXT:
+CONTEXT:
+${featurePrompt}
 - Expected room type: ${expectedRoom || 'unknown'}
 - Expected landmarks: ${expectedLandmarks?.join(', ') || 'none specified'}
-- Current instruction: ${currentInstruction || 'none'}
-- Steps into segment: ${stepsIntoSegment || 0}
 
 YOUR TASK:
-Compare the two images and determine if the user is at the expected location.
+Compare Image 2 against Image 1. Does Image 2 show the same location/features as Image 1?
 
-Consider:
-- Is this the same room/space type?
-- Are the same key features visible (doors, furniture, fixtures, signs)?
-- Is the perspective similar? (User may be at slightly different angle - that's okay)
-- Are expected landmarks visible?
-
-RESPOND ONLY WITH THIS JSON (no other text):
+RESPOND ONLY WITH THIS JSON:
 {
-  "isSameLocation": true or false,
+  "isOnTrack": true or false,
   "confidence": 0.0 to 1.0,
-  "detectedRoom": "what room type you see in current image",
-  "matchingFeatures": ["features", "visible", "in", "both"],
-  "missingFeatures": ["features", "in", "reference", "but", "not", "current"],
-  "unexpectedFeatures": ["features", "in", "current", "but", "not", "reference"],
+  "detectedRoom": "room type seen in Image 2",
+  "matchingFeatures": ["list", "of", "shared", "features"],
+  "missingFeatures": ["features", "in", "Image 1", "missing", "in", "Image 2"],
   "correctionNeeded": true or false,
-  "suggestedAdjustment": "turn slightly left" or null if no correction needed,
-  "speech": "Brief natural message for the user"
+  "speech": "Brief message for the user"
 }
 
-RULES FOR CONFIDENCE:
-- Above 0.8: Very confident this is the same location
-- 0.6-0.8: Likely the same location but some differences
-- 0.4-0.6: Uncertain - could be same location from different angle
-- Below 0.4: Probably different location
-
 RULES FOR SPEECH:
-- Be concise (under 20 words)
-- Never say "I see" or "In the image"
-- If on track: confirm and give encouragement
-- If off track: calmly suggest correction
-- Use clock positions relative to straight ahead (12 o'clock = forward)`;
+- If MATCH: "Perfect, that's the [Room/Feature]. Let's continue."
+- If NO MATCH: "I see [What looks like X], but I'm looking for [Expected Feature from Image 1]."
+- DO NOT mention "Destination" unless this IS the final destination.
+- Keep it under 20 words.`;
+    }
+
+    case 'extract_features': {
+      return `You are analyzing a reference image for indoor navigation.
+      
+Identify the most distinctive features in this image that a blind user could use to recognize this location later.
+
+RESPOND ONLY WITH THIS JSON:
+{
+  "roomType": "bedroom/kitchen/hallway/etc",
+  "distinctiveFeatures": ["feature 1", "feature 2"],
+  "summary": "Concise visual description of the key value (e.g. 'White door with glass panel')"
+}
+
+RULES:
+- Focus on permanent features (doors, windows, flooring, large furniture).
+- Ignore transient items (people, small clutter).
+- Summary should be usable as a prompt for validation later.`;
     }
 
     case 'identify_room': {
@@ -233,7 +239,7 @@ export default async function handler(request) {
   try {
     console.log('[VISION] Parsing request body...');
     const { currentImage, referenceImage, context } = await request.json();
-    
+
     console.log('[VISION] Request body parsed:', {
       hasCurrentImage: !!currentImage,
       currentImageLength: currentImage ? currentImage.length : 0,
@@ -305,7 +311,7 @@ export default async function handler(request) {
 
     // Prepare content parts for Gemini API
     const parts = [{ text: prompt }];
-    
+
     // For validate_position with referenceImage, send both images
     if (context.query === 'validate_position' && referenceImage) {
       parts.push(
@@ -370,7 +376,7 @@ export default async function handler(request) {
 
     // Extract JSON from response
     const jsonData = extractJSON(responseText);
-    
+
     if (!jsonData) {
       console.error('[VISION] ❌ Failed to extract JSON from response');
       return new Response(JSON.stringify({
@@ -386,11 +392,29 @@ export default async function handler(request) {
       });
     }
 
+    // Normalize output fields so backend always gets navigation-friendly keys
+    const normalized = { ...jsonData };
+
+    // Backward compatibility: some responses may use isSameLocation instead of isOnTrack
+    if (typeof normalized.isOnTrack !== 'boolean' && typeof normalized.isSameLocation === 'boolean') {
+      normalized.isOnTrack = normalized.isSameLocation;
+    }
+
+    // Backward compatibility: some responses may use suggestedAdjustment (string) instead of suggestedHeading
+    if (normalized.suggestedHeading === undefined && typeof normalized.suggestedAdjustment === 'string') {
+      normalized.suggestedHeading = null;
+    }
+
+    // Coerce correctionNeeded if missing
+    if (typeof normalized.correctionNeeded !== 'boolean') {
+      normalized.correctionNeeded = typeof normalized.isOnTrack === 'boolean' ? !normalized.isOnTrack : false;
+    }
+
     // Add success flag and ensure speech field exists
     const result = {
       success: true,
-      ...jsonData,
-      speech: jsonData.speech || 'Analysis complete.'
+      ...normalized,
+      speech: normalized.speech || 'Analysis complete.'
     };
 
     console.log('[VISION] ✅ Successfully parsed response for query:', context.query);
