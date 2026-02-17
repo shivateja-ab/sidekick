@@ -73,13 +73,16 @@ RESPOND ONLY WITH THIS JSON:
 {
   "roomType": "bedroom/kitchen/hallway/etc",
   "distinctiveFeatures": ["feature 1", "feature 2"],
-  "summary": "Concise visual description of the key value (e.g. 'White door with glass panel')"
+  "summary": "Concise visual description of the key value (e.g. 'White door with glass panel')",
+  "actionDescription": "Short imperative command for a blind user arriving here (e.g. 'Open the door', 'Go through the archway')"
 }
 
 RULES:
 - Focus on permanent features (doors, windows, flooring, large furniture).
 - Ignore transient items (people, small clutter).
-- Summary should be usable as a prompt for validation later.`;
+- Summary should be usable as a prompt for validation later.
+- actionDescription must be an imperative command (verb first).
+- actionDescription should be safe and helpful.`;
     }
 
     case 'identify_room': {
